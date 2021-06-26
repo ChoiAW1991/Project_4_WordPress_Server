@@ -1,0 +1,68 @@
+---
+- hosts: wordpressserver 
+  become: true
+  tasks:
+    - name: install apache2
+      apt: name=apache2 update_cache=no state=latest
+
+    - name: install php
+      apt: name=php update_cache=no state=latest
+
+    - name: install mySQL
+      action: apt pkg={{ item }} state=present
+      with_items:
+      - mysql-server
+      - mysql-client
+    - name: Start the MySQL service
+      action: service name=mysql state=started
+
+    - name: Create a new database called wordpress
+      mysql_db:
+        login_user: root
+        login_password: ""
+        name: wordpress
+        state: present
+
+    - name: Configure new MySQL user called wpuser
+      mysql_user:
+        login_user: root
+        login_password: ""
+        name: wpuser
+        password: wpuser_password_replace_with_your_own
+        priv: 'wordpress.*:ALL'
+    - name: Download and Extract WorPress
+      unarchive:
+        src: https://wordpress.org/latest.tar.gz
+        dest: /var/www/
+        remote_src: yes
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
+
+    - name: Copy sample config file
+      command: mv /var/www/wordpress/wp-config-sample.php /var/www/wordpress/wp-config.php
+
+    - name: Update Wordpress config file
+      lineinfile:
+        path: /var/www/wordpress/wp-config.php
+        regexp: "{{item.regexp}}"
+        line: "{{item.line}}"
+      with_items:
+        - {'regexp': "define\\( 'DB_NAME', '(.)+' \\);", 'line': "define( 'DB_NAME', 'wordpress' );"}
+        - {'regexp': "define\\( 'DB_USER', '(.)+' \\);", 'line': "define( 'DB_USER', 'wpuser' );"}
+        - {'regexp': "define\\( 'DB_PASSWORD', '(.)+' \\);", 'line': "define( 'DB_PASSWORD', 'wpuser_password_replace_with_your_own' );"}
+
+    - name: Update ownership to Apache user
+      file:
+        path: /var/www/wordpress/
+        state: directory
+        recurse: yes
+        owner: www-data
+
+    - name: Set the correct permissions on Wordpress directories
+      command: find /var/www/wordpress/ -type d -exec chmod 750 {} \;
+
+    - name: Set the correct permissions for Wordpress files
+      command: find /var/www/wordpress/ -type f -exec chmod 640 {} \;
